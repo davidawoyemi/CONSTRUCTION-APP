@@ -19,8 +19,37 @@ SOURCE_TYPE_WEIGHTS = {
 
 
 def region_from_zip(zip_code: str) -> str:
-    clean = "".join(char for char in zip_code if char.isdigit())
-    return clean[:3] if len(clean) >= 3 else "US"
+    value = (zip_code or "").strip().lower()
+    clean_digits = "".join(char for char in value if char.isdigit())
+
+    if any(token in value for token in ("lagos", "ikeja", "lekki", "yaba", "surulere")):
+        return "NG-LAG"
+    if any(token in value for token in ("abuja", "fct", "garki", "wuse", "gwarinpa")):
+        return "NG-ABJ"
+    if any(token in value for token in ("port harcourt", "rivers", "ph")):
+        return "NG-RIV"
+    if any(token in value for token in ("kano", "kaduna", "zaria")):
+        return "NG-KAN"
+
+    if len(clean_digits) >= 3:
+        prefix = clean_digits[:3]
+        if prefix in {"100", "101", "102", "103", "104", "105", "106"}:
+            return "NG-LAG"
+        if prefix in {"900", "901", "902", "903"}:
+            return "NG-ABJ"
+        if prefix in {"500", "501", "502"}:
+            return "NG-RIV"
+        if prefix in {"700", "701", "702"}:
+            return "NG-KAN"
+
+    return "NG"
+
+
+def region_fallbacks(region_code: str) -> list[str]:
+    if "-" in region_code:
+        country = region_code.split("-", maxsplit=1)[0]
+        return [region_code, country]
+    return [region_code]
 
 
 def recency_score(observed_at: datetime) -> float:
@@ -64,20 +93,29 @@ def _agreement_score(unit_costs: list[float]) -> float:
 def _resolve_region_multiplier(db: Session, region_code: str, csi_code: str) -> float:
     multiplier = db.scalar(
         select(models.RegionMultiplier.multiplier).where(
-            models.RegionMultiplier.region_code == region_code,
+            models.RegionMultiplier.region_code.in_(region_fallbacks(region_code)),
             models.RegionMultiplier.csi_code == csi_code,
         )
     )
     if multiplier is not None:
         return multiplier
 
-    national = db.scalar(
+    national_ng = db.scalar(
+        select(models.RegionMultiplier.multiplier).where(
+            models.RegionMultiplier.region_code == "NG",
+            models.RegionMultiplier.csi_code == csi_code,
+        )
+    )
+    if national_ng is not None:
+        return national_ng
+
+    national_us = db.scalar(
         select(models.RegionMultiplier.multiplier).where(
             models.RegionMultiplier.region_code == "US",
             models.RegionMultiplier.csi_code == csi_code,
         )
     )
-    return national if national is not None else 1.0
+    return national_us if national_us is not None else 1.0
 
 
 def price_candidates_for_csi(
@@ -87,6 +125,7 @@ def price_candidates_for_csi(
 ) -> list[dict[str, Any]]:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     region_code = region_from_zip(project.zip_code)
+    search_regions = region_fallbacks(region_code)
     candidates: list[dict[str, Any]] = []
 
     quotes = db.scalars(
@@ -117,9 +156,16 @@ def price_candidates_for_csi(
         observations = db.scalars(
             select(models.PriceObservation).where(
                 models.PriceObservation.price_catalog_item_id == catalog_item.id,
-                models.PriceObservation.region_code.in_([region_code, "US"]),
+                models.PriceObservation.region_code.in_(search_regions),
             )
         ).all()
+        if not observations:
+            observations = db.scalars(
+                select(models.PriceObservation).where(
+                    models.PriceObservation.price_catalog_item_id == catalog_item.id,
+                    models.PriceObservation.region_code == "US",
+                )
+            ).all()
         for observation in observations:
             candidates.append(
                 {
@@ -272,14 +318,24 @@ def seed_demo_prices(db: Session) -> None:
     for source in db.scalars(select(models.PriceSource)).all():
         source_by_name[source.name] = source
 
+    if "Nigeria Market Survey" not in source_by_name:
+        db.add(models.PriceSource(source_type="cost_db", name="Nigeria Market Survey", reliability_score=0.82))
+    if "Nigeria Contractor Invoices" not in source_by_name:
+        db.add(
+            models.PriceSource(
+                source_type="historical_invoice",
+                name="Nigeria Contractor Invoices",
+                reliability_score=0.8,
+            )
+        )
     if "National Cost DB" not in source_by_name:
-        db.add(models.PriceSource(source_type="cost_db", name="National Cost DB", reliability_score=0.78))
+        db.add(models.PriceSource(source_type="cost_db", name="National Cost DB", reliability_score=0.72))
     if "Historical Invoices" not in source_by_name:
         db.add(
             models.PriceSource(
                 source_type="historical_invoice",
                 name="Historical Invoices",
-                reliability_score=0.72,
+                reliability_score=0.68,
             )
         )
     db.flush()
@@ -333,54 +389,65 @@ def seed_demo_prices(db: Session) -> None:
         (obs.price_catalog_item_id, obs.source_id, obs.region_code): obs
         for obs in db.scalars(select(models.PriceObservation)).all()
     }
-    source_cost_db = source_by_name["National Cost DB"]
-    source_invoice = source_by_name["Historical Invoices"]
+    source_cost_db_ng = source_by_name["Nigeria Market Survey"]
+    source_invoice_ng = source_by_name["Nigeria Contractor Invoices"]
 
     observation_specs = [
-        ("09-29-00", "Gypsum Board", 2.2, 2.1),
-        ("06-11-00", "Wood Framing", 14.0, 13.4),
-        ("03-30-00", "Portland Cement", 10.5, 9.9),
-        ("03-20-00", "Reinforcing Steel", 1.45, 1.36),
-        ("04-22-00", "6-inch Concrete Block", 1.35, 1.28),
-        ("04-22-10", "9-inch Concrete Block", 1.85, 1.72),
-        ("31-00-00", "Sharp Sand", 38.0, 35.5),
-        ("32-12-00", "Granite/Stone Base", 44.0, 41.2),
-        ("09-90-00", "Paint", 7.8, 7.3),
-        ("26-00-00", "Electrical Points", 42.0, 39.0),
-        ("22-00-00", "Plumbing Points", 55.0, 51.0),
-        ("07-41-00", "Roof Sheet", 16.5, 15.1),
-        ("08-11-00", "Doors", 210.0, 195.0),
-        ("08-50-00", "Windows", 180.0, 165.0),
-        ("09-30-00", "Floor/Wall Tiles", 12.5, 11.4),
-        ("22-11-00", "Plumbing Pipes", 4.6, 4.2),
-        ("26-05-00", "Electrical Wire", 1.75, 1.61),
-        ("06-15-00", "Roof Timber", 590.0, 545.0),
+        ("09-29-00", "Gypsum Board", 9200.0, 8600.0),
+        ("06-11-00", "Wood Framing", 7800.0, 7300.0),
+        ("03-30-00", "Portland Cement", 11800.0, 11100.0),
+        ("03-20-00", "Reinforcing Steel", 1580.0, 1490.0),
+        ("04-22-00", "6-inch Concrete Block", 720.0, 670.0),
+        ("04-22-10", "9-inch Concrete Block", 960.0, 900.0),
+        ("31-00-00", "Sharp Sand", 16500.0, 15400.0),
+        ("32-12-00", "Granite/Stone Base", 23200.0, 21900.0),
+        ("09-90-00", "Paint", 4300.0, 3950.0),
+        ("26-00-00", "Electrical Points", 38000.0, 35200.0),
+        ("22-00-00", "Plumbing Points", 47000.0, 43500.0),
+        ("07-41-00", "Roof Sheet", 19300.0, 18100.0),
+        ("08-11-00", "Doors", 235000.0, 215000.0),
+        ("08-50-00", "Windows", 186000.0, 169000.0),
+        ("09-30-00", "Floor/Wall Tiles", 24800.0, 22900.0),
+        ("22-11-00", "Plumbing Pipes", 6900.0, 6400.0),
+        ("26-05-00", "Electrical Wire", 2950.0, 2720.0),
+        ("06-15-00", "Roof Timber", 505000.0, 468000.0),
     ]
 
-    for csi_code, item_name, cost_db_value, invoice_value in observation_specs:
+    for csi_code, item_name, market_value, invoice_value in observation_specs:
         catalog_item = catalog_index.get(f"{csi_code}|{item_name}")
         if not catalog_item:
             continue
-        for source, value in ((source_cost_db, cost_db_value), (source_invoice, invoice_value)):
-            key = (catalog_item.id, source.id, "US")
+        for source, value in ((source_cost_db_ng, market_value), (source_invoice_ng, invoice_value)):
+            key = (catalog_item.id, source.id, "NG")
             if key not in obs_index:
                 db.add(
                     models.PriceObservation(
                         price_catalog_item_id=catalog_item.id,
                         source_id=source.id,
-                        region_code="US",
+                        region_code="NG",
                         unit_cost=value,
                         observed_at=now,
+                        currency="NGN",
                     )
                 )
+                obs_index[key] = True
 
     multiplier_index = {
         (row.region_code, row.csi_code): row
         for row in db.scalars(select(models.RegionMultiplier)).all()
     }
+    regional_multiplier_map = {
+        "NG": 1.0,
+        "NG-LAG": 1.08,
+        "NG-ABJ": 1.12,
+        "NG-RIV": 1.1,
+        "NG-KAN": 0.94,
+    }
     for csi_code, _, _, _ in catalog_specs:
-        key = ("US", csi_code)
-        if key not in multiplier_index:
-            db.add(models.RegionMultiplier(region_code="US", csi_code=csi_code, multiplier=1.0))
+        for region_code, multiplier in regional_multiplier_map.items():
+            key = (region_code, csi_code)
+            if key not in multiplier_index:
+                db.add(models.RegionMultiplier(region_code=region_code, csi_code=csi_code, multiplier=multiplier))
+                multiplier_index[key] = True
 
     db.commit()

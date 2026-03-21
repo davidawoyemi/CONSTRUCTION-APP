@@ -2,6 +2,7 @@
 
 Website + backend MVP for a construction estimating app that:
 
+- is currently calibrated for Nigeria-first costing (NGN and Nigeria region multipliers)
 - accepts drawing files (PDF/TXT) and auto-generates takeoff quantities
 - stores project takeoff items
 - blends multiple price sources (supplier quotes + cost DB observations)
@@ -78,6 +79,13 @@ For each takeoff item:
 6. You can add extra materials not detected from drawing via `additional_materials_json`.
 7. Missing prices are filled with market-derived low/expected/high ranges.
 8. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
+
+### Nigeria-first pricing defaults
+
+- Currency: NGN (Naira)
+- Regional multipliers: Nigeria national + Lagos/Abuja/Port Harcourt/Kano adjustments
+- Seeded market references and invoice references are Nigeria-oriented
+- Architecture still supports adding other countries/regions later
 
 ## Running tests
 

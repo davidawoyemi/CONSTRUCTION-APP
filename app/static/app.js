@@ -4,6 +4,11 @@ const state = {
   extraMaterials: [],
 };
 
+const appConfig = {
+  locale: "en-NG",
+  currency: "NGN",
+};
+
 function log(message) {
   const el = document.getElementById("log");
   const time = new Date().toLocaleTimeString();
@@ -11,7 +16,11 @@ function log(message) {
 }
 
 function toMoney(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0);
+  return new Intl.NumberFormat(appConfig.locale, {
+    style: "currency",
+    currency: appConfig.currency,
+    maximumFractionDigits: 2,
+  }).format(value || 0);
 }
 
 function setProjectMeta() {
