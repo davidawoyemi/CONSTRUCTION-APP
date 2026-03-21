@@ -1,12 +1,35 @@
 const state = {
   projectId: null,
+  projectName: null,
   estimateId: null,
   extraMaterials: [],
+  materialVariants: {},
 };
 
 const appConfig = {
   locale: "en-NG",
   currency: "NGN",
+};
+
+const MATERIAL_VARIANTS = {
+  cement_bag: [
+    { key: "market", label: "Market blend (auto)", multiplier: null, autofill: false },
+    { key: "dangote_50kg", label: "Dangote Cement 50kg", multiplier: 1.05, autofill: true },
+    { key: "bua_50kg", label: "BUA Cement 50kg", multiplier: 1.01, autofill: true },
+    { key: "lafarge_50kg", label: "Lafarge Cement 50kg", multiplier: 1.04, autofill: true },
+  ],
+  rebar_kg: [
+    { key: "market", label: "Market blend (auto)", multiplier: null, autofill: false },
+    { key: "austen", label: "Austen Rebar", multiplier: 1.03, autofill: true },
+    { key: "african_foundries", label: "African Foundries", multiplier: 1.01, autofill: true },
+    { key: "local_mill", label: "Local mill (budget)", multiplier: 0.96, autofill: true },
+  ],
+  paint_liter: [
+    { key: "market", label: "Market blend (auto)", multiplier: null, autofill: false },
+    { key: "dulux", label: "Dulux", multiplier: 1.1, autofill: true },
+    { key: "berger", label: "Berger", multiplier: 1.06, autofill: true },
+    { key: "sandtex", label: "Sandtex", multiplier: 1.0, autofill: true },
+  ],
 };
 
 function log(message) {
@@ -23,13 +46,31 @@ function toMoney(value) {
   }).format(value || 0);
 }
 
-function setProjectMeta() {
-  const meta = document.getElementById("project-meta");
-  meta.textContent = state.projectId ? `Project ID: ${state.projectId}` : "No project selected.";
-}
-
 function normalizeKey(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "custom_material";
+}
+
+function setStatus(id, text, kind) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.classList.remove("pending", "success", "running");
+  el.classList.add(kind);
+}
+
+function setButtonLoading(id, isLoading, idleText, loadingText) {
+  const btn = document.getElementById(id);
+  if (!btn) {
+    return;
+  }
+  btn.disabled = isLoading;
+  btn.textContent = isLoading ? loadingText : idleText;
+}
+
+function setProjectMeta() {
+  const meta = document.getElementById("project-meta");
+  meta.textContent = state.projectId
+    ? `Project created: ${state.projectName || "Untitled"} (ID ${state.projectId})`
+    : "No project selected. Project will auto-create when you click Analyze Drawing.";
 }
 
 function setEstimateMeta(locked = false) {
@@ -39,6 +80,27 @@ function setEstimateMeta(locked = false) {
     return;
   }
   meta.textContent = `Estimate ID: ${state.estimateId}${locked ? " (locked)" : ""}`;
+}
+
+function defaultVariantKey(item) {
+  if (item.material_key === "cement_bag") {
+    return "dangote_50kg";
+  }
+  return "market";
+}
+
+function variantsForMaterial(item) {
+  return MATERIAL_VARIANTS[item.material_key] || [
+    { key: "market", label: "Market blend (auto)", multiplier: null, autofill: false },
+  ];
+}
+
+function variantPrice(item, variantKey) {
+  const variant = variantsForMaterial(item).find((row) => row.key === variantKey);
+  if (!variant || variant.multiplier === null) {
+    return null;
+  }
+  return Number((item.unit_price_expected * variant.multiplier).toFixed(2));
 }
 
 function renderEstimate(data) {
@@ -66,15 +128,39 @@ function renderEstimate(data) {
 function renderPriceInputs(materials) {
   const tbody = document.getElementById("price-input-rows");
   tbody.innerHTML = "";
+
   materials.forEach((item) => {
+    const variantList = variantsForMaterial(item);
+    const selectedVariant =
+      state.materialVariants[item.material_key] || defaultVariantKey(item);
+    state.materialVariants[item.material_key] = selectedVariant;
     const suggested = `${toMoney(item.unit_price_low)} - ${toMoney(item.unit_price_high)}`;
     const currentKnown =
-      item.price_source === "user_provided" ? item.unit_price_expected : "";
+      item.price_source === "user_provided"
+        ? item.unit_price_expected
+        : variantPrice(item, selectedVariant) || "";
+
+    const optionTags = variantList
+      .map(
+        (option) =>
+          `<option value="${option.key}" ${option.key === selectedVariant ? "selected" : ""}>${option.label}</option>`,
+      )
+      .join("");
+
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><strong>${item.item_name}</strong><br /><small>${item.material_key}</small></td>
       <td>${item.quantity.toFixed(2)}</td>
       <td>${item.unit}</td>
+      <td>
+        <select
+          class="material-type-select"
+          data-material-key="${item.material_key}"
+          data-expected="${item.unit_price_expected}"
+        >
+          ${optionTags}
+        </select>
+      </td>
       <td>${suggested}</td>
       <td>
         <input
@@ -84,14 +170,15 @@ function renderPriceInputs(materials) {
           min="0"
           data-material-key="${item.material_key}"
           value="${currentKnown}"
-          placeholder="e.g. 12.50"
+          placeholder="Enter known unit price"
         />
       </td>
     `;
     tbody.appendChild(row);
   });
+
   document.getElementById("price-prompt").textContent =
-    "Enter any prices you know, then click 'Apply Prices & Recalculate'.";
+    "Detected materials are locked. Pick material type (e.g., Dangote cement) and enter any exact prices you know.";
 }
 
 function renderAutoEstimate(data) {
@@ -112,10 +199,18 @@ function renderAutoEstimate(data) {
     tbody.appendChild(row);
   });
 
-  document.getElementById("auto-total-range").textContent = `${toMoney(data.totals.total_low)} - ${toMoney(data.totals.total_high)}`;
+  document.getElementById("auto-total-range").textContent =
+    `${toMoney(data.totals.total_low)} - ${toMoney(data.totals.total_high)}`;
   document.getElementById("auto-total-expected").textContent = toMoney(data.totals.total_expected);
+  document.getElementById("headline-total-range").textContent =
+    `${toMoney(data.totals.total_low)} - ${toMoney(data.totals.total_high)}`;
+  document.getElementById("headline-total-expected").textContent = toMoney(data.totals.total_expected);
   const meta = document.getElementById("drawing-meta");
-  meta.textContent = `Drawing: ${data.file_name} | Assumptions: ${data.assumptions.floor_area_sqm} sqm, ${data.assumptions.floors} floor(s), ${data.assumptions.bedrooms} bed, ${data.assumptions.bathrooms} bath`;
+  meta.textContent =
+    `Drawing: ${data.file_name} | Assumptions: ${data.assumptions.floor_area_sqm} sqm, ` +
+    `${data.assumptions.floors} floor(s), ${data.assumptions.bedrooms} bed, ${data.assumptions.bathrooms} bath`;
+  setStatus("drawing-status", "Completed", "success");
+  setStatus("total-status", `Expected ${toMoney(data.totals.total_expected)}`, "success");
   renderPriceInputs(data.materials);
 }
 
@@ -135,7 +230,6 @@ async function apiRequest(path, method = "GET", payload = null) {
   if (response.status === 204) {
     return null;
   }
-
   return response.json();
 }
 
@@ -152,6 +246,49 @@ async function apiFormRequest(path, formData) {
   return response.json();
 }
 
+function projectPayloadFromForm() {
+  const name = (document.getElementById("project-name").value || "").trim() || "Quick Estimate";
+  const projectType = (document.getElementById("project-type").value || "").trim() || "residential";
+  const location = (document.getElementById("project-zip").value || "").trim() || "Lagos";
+  return { name, project_type: projectType, zip_code: location };
+}
+
+function resetCostViews() {
+  document.getElementById("price-input-rows").innerHTML = "";
+  document.getElementById("auto-line-items").innerHTML = "";
+  document.getElementById("auto-total-range").textContent = `${toMoney(0)} - ${toMoney(0)}`;
+  document.getElementById("auto-total-expected").textContent = toMoney(0);
+  document.getElementById("headline-total-range").textContent = `${toMoney(0)} - ${toMoney(0)}`;
+  document.getElementById("headline-total-expected").textContent = toMoney(0);
+  document.getElementById("price-prompt").textContent = "Analyze a drawing first to populate this list.";
+  document.getElementById("drawing-meta").textContent = "No drawing analyzed yet.";
+  setStatus("drawing-status", "Not started", "pending");
+  setStatus("total-status", "No estimate yet", "pending");
+}
+
+async function ensureProject() {
+  if (state.projectId) {
+    return state.projectId;
+  }
+  setButtonLoading("project-create-btn", true, "Create Project", "Creating...");
+  setStatus("project-status", "Creating...", "running");
+  const payload = projectPayloadFromForm();
+  const data = await apiRequest("/projects", "POST", payload);
+  state.projectId = data.id;
+  state.projectName = data.name;
+  state.estimateId = null;
+  state.extraMaterials = [];
+  state.materialVariants = {};
+  renderExtraMaterials();
+  setProjectMeta();
+  setEstimateMeta();
+  resetCostViews();
+  setStatus("project-status", `Created (#${data.id})`, "success");
+  setButtonLoading("project-create-btn", false, "Create Project", "Creating...");
+  log(`Project ready: "${data.name}" (id=${data.id})`);
+  return data.id;
+}
+
 function collectKnownPricesFromInputs() {
   const prices = {};
   document.querySelectorAll("#price-input-rows input[data-material-key]").forEach((input) => {
@@ -160,6 +297,21 @@ function collectKnownPricesFromInputs() {
       prices[input.dataset.materialKey] = value;
     }
   });
+
+  document.querySelectorAll("#price-input-rows select[data-material-key]").forEach((select) => {
+    const key = select.dataset.materialKey;
+    if (!key || prices[key]) {
+      return;
+    }
+    const selected = select.value;
+    const expected = Number(select.dataset.expected || "0");
+    const fakeItem = { material_key: key, unit_price_expected: expected };
+    const suggested = variantPrice(fakeItem, selected);
+    if (suggested && suggested > 0) {
+      prices[key] = suggested;
+    }
+  });
+
   state.extraMaterials.forEach((item) => {
     if (item.known_unit_price && Number(item.known_unit_price) > 0) {
       prices[item.material_key] = Number(item.known_unit_price);
@@ -185,56 +337,48 @@ function renderExtraMaterials() {
 }
 
 async function runDrawingEstimate() {
-  if (!state.projectId) {
-    log("Create a project first.");
-    return;
-  }
+  await ensureProject();
   const fileInput = document.getElementById("drawing-file");
   const file = fileInput.files[0];
   if (!file) {
-    log("Select a drawing file first.");
-    return;
+    throw new Error("Select a drawing file first.");
   }
 
-  const knownPrices = collectKnownPricesFromInputs();
-  const formData = new FormData();
-  formData.append("drawing", file);
-  formData.append("known_prices_json", JSON.stringify(knownPrices));
-  formData.append("additional_materials_json", JSON.stringify(state.extraMaterials));
+  setStatus("drawing-status", "Analyzing...", "running");
+  setButtonLoading("analyze-btn", true, "Analyze Drawing", "Analyzing...");
+  setButtonLoading("apply-price-btn", true, "Apply Prices & Recalculate", "Recalculating...");
 
-  const data = await apiFormRequest(`/projects/${state.projectId}/drawings/auto-estimate`, formData);
-  renderAutoEstimate(data);
+  try {
+    const knownPrices = collectKnownPricesFromInputs();
+    const formData = new FormData();
+    formData.append("drawing", file);
+    formData.append("known_prices_json", JSON.stringify(knownPrices));
+    formData.append("additional_materials_json", JSON.stringify(state.extraMaterials));
 
-  if (data.missing_unit_price_items.length > 0) {
-    log(`Recalculated. You can still add prices for: ${data.missing_unit_price_items.join(", ")}`);
-  } else {
-    log("All materials now have known prices.");
+    const data = await apiFormRequest(`/projects/${state.projectId}/drawings/auto-estimate`, formData);
+    renderAutoEstimate(data);
+    if (data.missing_unit_price_items.length > 0) {
+      log(`Analysis complete. Missing price inputs: ${data.missing_unit_price_items.length} item(s).`);
+    } else {
+      log("Analysis complete. All detected materials have explicit unit prices.");
+    }
+  } finally {
+    setButtonLoading("analyze-btn", false, "Analyze Drawing", "Analyzing...");
+    setButtonLoading("apply-price-btn", false, "Apply Prices & Recalculate", "Recalculating...");
   }
 }
 
 document.getElementById("project-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const payload = {
-      name: document.getElementById("project-name").value,
-      project_type: document.getElementById("project-type").value,
-      zip_code: document.getElementById("project-zip").value,
-    };
-    const data = await apiRequest("/projects", "POST", payload);
-    state.projectId = data.id;
-    state.estimateId = null;
-    state.extraMaterials = [];
-    renderExtraMaterials();
-    document.getElementById("price-input-rows").innerHTML = "";
-    document.getElementById("auto-line-items").innerHTML = "";
-    document.getElementById("auto-total-range").textContent = "$0.00 - $0.00";
-    document.getElementById("auto-total-expected").textContent = "$0.00";
-    document.getElementById("price-prompt").textContent = "Analyze a drawing first to populate this list.";
-    document.getElementById("drawing-meta").textContent = "No drawing analyzed yet.";
-    setProjectMeta();
-    setEstimateMeta();
-    log(`Created project "${data.name}" (id=${data.id})`);
+    if (state.projectId) {
+      log(`Project already created (id=${state.projectId}).`);
+      return;
+    }
+    await ensureProject();
   } catch (err) {
+    setStatus("project-status", "Failed", "pending");
+    setButtonLoading("project-create-btn", false, "Create Project", "Creating...");
     log(`Project error: ${err.message}`);
   }
 });
@@ -243,8 +387,8 @@ document.getElementById("drawing-form").addEventListener("submit", async (event)
   event.preventDefault();
   try {
     await runDrawingEstimate();
-    log("Drawing analysis complete.");
   } catch (err) {
+    setStatus("drawing-status", "Failed", "pending");
     log(`Drawing estimate error: ${err.message}`);
   }
 });
@@ -253,7 +397,37 @@ document.getElementById("apply-price-btn").addEventListener("click", async () =>
   try {
     await runDrawingEstimate();
   } catch (err) {
+    setStatus("drawing-status", "Failed", "pending");
     log(`Price update error: ${err.message}`);
+  }
+});
+
+document.getElementById("price-input-rows").addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  if (!target.matches("select[data-material-key]")) {
+    return;
+  }
+  const materialKey = target.dataset.materialKey;
+  if (!materialKey) {
+    return;
+  }
+  state.materialVariants[materialKey] = target.value;
+  const row = target.closest("tr");
+  if (!row) {
+    return;
+  }
+  const input = row.querySelector(`input[data-material-key="${materialKey}"]`);
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const expected = Number(target.dataset.expected || "0");
+  const suggested = variantPrice({ material_key: materialKey, unit_price_expected: expected }, target.value);
+  if (suggested) {
+    input.value = String(suggested);
+    log(`Applied ${target.options[target.selectedIndex].text} for ${materialKey}.`);
   }
 });
 
@@ -288,7 +462,7 @@ document.getElementById("extra-material-form").addEventListener("submit", (event
   renderExtraMaterials();
   event.target.reset();
   document.getElementById("extra-waste").value = "0";
-  log(`Added extra material "${itemName}". Recalculate to include it.`);
+  log(`Added extra material "${itemName}". Click Apply/Recalculate to include it.`);
 });
 
 document.getElementById("extra-material-rows").addEventListener("click", (event) => {
@@ -311,11 +485,8 @@ document.getElementById("extra-material-rows").addEventListener("click", (event)
 
 document.getElementById("takeoff-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!state.projectId) {
-    log("Create a project first.");
-    return;
-  }
   try {
+    await ensureProject();
     const payload = {
       csi_code: document.getElementById("takeoff-csi").value,
       item_name: document.getElementById("takeoff-name").value,
@@ -332,11 +503,8 @@ document.getElementById("takeoff-form").addEventListener("submit", async (event)
 
 document.getElementById("quote-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!state.projectId) {
-    log("Create a project first.");
-    return;
-  }
   try {
+    await ensureProject();
     const payload = [
       {
         supplier_name: document.getElementById("quote-supplier").value,
@@ -356,11 +524,8 @@ document.getElementById("quote-form").addEventListener("submit", async (event) =
 
 document.getElementById("estimate-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!state.projectId) {
-    log("Create a project first.");
-    return;
-  }
   try {
+    await ensureProject();
     const payload = { version_name: document.getElementById("estimate-name").value };
     const data = await apiRequest(`/projects/${state.projectId}/estimate-versions`, "POST", payload);
     state.estimateId = data.id;
@@ -416,3 +581,5 @@ document.getElementById("refresh-btn").addEventListener("click", async () => {
 setProjectMeta();
 setEstimateMeta();
 renderExtraMaterials();
+resetCostViews();
+setStatus("project-status", "Not created", "pending");

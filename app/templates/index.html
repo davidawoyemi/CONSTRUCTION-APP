@@ -20,23 +20,41 @@
     </header>
 
     <section class="card">
-      <h2>Step 1 - Create Project</h2>
+      <h2>Workflow Status</h2>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">Project</span>
+          <span class="status-pill pending" id="project-status">Not created</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Drawing Analysis</span>
+          <span class="status-pill pending" id="drawing-status">Not started</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Estimate Total</span>
+          <span class="status-pill pending" id="total-status">No estimate yet</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Step 1 - Project Details (Optional)</h2>
       <form id="project-form">
         <label>
           Project Name
-          <input type="text" id="project-name" placeholder="3-Bed Duplex, Lekki" required />
+          <input type="text" id="project-name" placeholder="3-Bed Duplex, Lekki" value="Quick Estimate" />
         </label>
         <label>
           Project Type
-          <input type="text" id="project-type" placeholder="residential" required />
+          <input type="text" id="project-type" placeholder="residential" value="residential" />
         </label>
         <label>
           State / Area (Nigeria)
-          <input type="text" id="project-zip" placeholder="Lagos, Abuja, Port Harcourt, Kano..." required />
+          <input type="text" id="project-zip" placeholder="Lagos, Abuja, Port Harcourt, Kano..." value="Lagos" />
         </label>
-        <button type="submit">Create Project</button>
+        <button id="project-create-btn" type="submit">Create Project</button>
       </form>
-      <p class="meta" id="project-meta">No project selected.</p>
+      <p class="meta" id="project-meta">No project selected. Project will auto-create when you click Analyze Drawing.</p>
       <p class="meta">Prices are currently calibrated for Nigeria (NGN). Multi-country support can be enabled later.</p>
     </section>
 
@@ -47,7 +65,7 @@
           Drawing File (PDF or TXT)
           <input type="file" id="drawing-file" accept=".pdf,.txt" required />
         </label>
-        <button type="submit">Analyze Drawing</button>
+        <button id="analyze-btn" type="submit">Analyze Drawing</button>
       </form>
       <p class="meta" id="drawing-meta">No drawing analyzed yet.</p>
     </section>
@@ -63,6 +81,7 @@
             <th>Material (Locked)</th>
             <th>Qty</th>
             <th>Unit</th>
+            <th>Type Option</th>
             <th>Market Hint</th>
             <th>Your Unit Price (Optional)</th>
           </tr>
@@ -102,9 +121,14 @@
 
     <section class="card">
       <h2>Estimated Cost Output</h2>
+      <div class="grand-total-card">
+        <p class="tiny">Expected Total Project Cost</p>
+        <p class="grand-number" id="headline-total-expected">₦0.00</p>
+        <p class="tiny">Range: <span id="headline-total-range">₦0.00 - ₦0.00</span></p>
+      </div>
       <div class="totals">
-        <p><strong>Total Range:</strong> <span id="auto-total-range">$0.00 - $0.00</span></p>
-        <p><strong>Expected Total:</strong> <span id="auto-total-expected">$0.00</span></p>
+        <p><strong>Total Range:</strong> <span id="auto-total-range">₦0.00 - ₦0.00</span></p>
+        <p><strong>Expected Total:</strong> <span id="auto-total-expected">₦0.00</span></p>
       </div>
       <table>
         <thead>
@@ -166,7 +190,7 @@
             <button id="refresh-btn" type="button">Refresh Estimate</button>
           </div>
           <p class="meta" id="estimate-meta">No estimate selected.</p>
-          <p><strong>Estimate Total:</strong> <span id="estimate-total">$0.00</span></p>
+          <p><strong>Estimate Total:</strong> <span id="estimate-total">₦0.00</span></p>
           <table>
             <thead>
               <tr>
