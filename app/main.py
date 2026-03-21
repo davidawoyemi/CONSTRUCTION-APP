@@ -1,21 +1,25 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, pricing, schemas
-from app.database import Base, engine, get_db
-
-app = FastAPI(title="Construction Cost Estimator", version="0.1.0")
+from app.database import Base, SessionLocal, engine, get_db
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
-    db = next(get_db())
+    db = SessionLocal()
     try:
         pricing.seed_demo_prices(db)
     finally:
         db.close()
+    yield
+
+
+app = FastAPI(title="Construction Cost Estimator", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -45,8 +49,10 @@ def get_project_or_404(db: Session, project_id: int) -> models.Project:
 
 
 def get_estimate_or_404(db: Session, estimate_version_id: int) -> models.EstimateVersion:
+    db.expire_all()
     estimate_version = db.scalar(
         select(models.EstimateVersion)
+        .execution_options(populate_existing=True)
         .options(selectinload(models.EstimateVersion.line_items))
         .where(models.EstimateVersion.id == estimate_version_id)
     )

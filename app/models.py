@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Project(Base):
@@ -16,7 +20,7 @@ class Project(Base):
     project_type: Mapped[str] = mapped_column(String(80), nullable=False)
     zip_code: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="draft", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     takeoff_items: Mapped[list[TakeoffItem]] = relationship(back_populates="project")
     estimate_versions: Mapped[list[EstimateVersion]] = relationship(back_populates="project")
@@ -34,7 +38,7 @@ class TakeoffItem(Base):
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     waste_factor_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="takeoff_items")
 
@@ -46,7 +50,7 @@ class PriceSource(Base):
     source_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     reliability_score: Mapped[float] = mapped_column(Float, default=0.7, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     price_observations: Mapped[list[PriceObservation]] = relationship(back_populates="source")
 
@@ -59,7 +63,7 @@ class PriceCatalogItem(Base):
     item_name: Mapped[str] = mapped_column(String(200), nullable=False)
     default_unit: Mapped[str] = mapped_column(String(20), nullable=False)
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="material")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     observations: Mapped[list[PriceObservation]] = relationship(back_populates="catalog_item")
 
@@ -92,7 +96,7 @@ class RegionMultiplier(Base):
     region_code: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     csi_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     multiplier: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class LaborRate(Base):
@@ -104,7 +108,7 @@ class LaborRate(Base):
     union_flag: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     hourly_rate: Mapped[float] = mapped_column(Float, nullable=False)
     burden_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class EstimateVersion(Base):
@@ -114,7 +118,7 @@ class EstimateVersion(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
     version_name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="estimate_versions")
     line_items: Mapped[list[EstimateLineItem]] = relationship(
@@ -139,7 +143,7 @@ class EstimateLineItem(Base):
     freshness_status: Mapped[str] = mapped_column(String(20), nullable=False)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
     subtotal_cost: Mapped[float] = mapped_column(Float, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     estimate_version: Mapped[EstimateVersion] = relationship(back_populates="line_items")
 
@@ -156,6 +160,6 @@ class SupplierQuote(Base):
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     quoted_unit_cost: Mapped[float] = mapped_column(Float, nullable=False)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime)
-    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="supplier_quotes")

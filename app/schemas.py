@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectCreate(BaseModel):
@@ -16,8 +16,7 @@ class ProjectRead(BaseModel):
     zip_code: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TakeoffItemCreate(BaseModel):
@@ -39,8 +38,7 @@ class TakeoffItemRead(BaseModel):
     waste_factor_pct: float
     notes: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SupplierQuoteCreate(BaseModel):
@@ -64,8 +62,7 @@ class SupplierQuoteRead(BaseModel):
     quoted_unit_cost: float
     valid_until: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EstimateVersionCreate(BaseModel):
@@ -82,8 +79,7 @@ class EstimateLineItemRead(BaseModel):
     confidence_score: float
     subtotal_cost: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EstimateVersionRead(BaseModel):
@@ -94,5 +90,4 @@ class EstimateVersionRead(BaseModel):
     created_at: datetime
     line_items: list[EstimateLineItemRead]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
