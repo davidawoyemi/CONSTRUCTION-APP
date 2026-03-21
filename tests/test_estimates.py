@@ -181,7 +181,7 @@ def test_supplier_quote_impacts_pricing() -> None:
                     "csi_code": "09-29-00",
                     "item_name": "Gypsum Board",
                     "unit": "sqft",
-                    "quoted_unit_cost": 3.2,
+                    "quoted_unit_cost": 15000.0,
                 }
             ],
         )
