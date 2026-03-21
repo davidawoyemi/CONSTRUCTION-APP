@@ -1,6 +1,6 @@
 # Construction Cost Estimator (MVP)
 
-Backend MVP for a construction estimating app that:
+Website + backend MVP for a construction estimating app that:
 
 - stores project takeoff items
 - blends multiple price sources (supplier quotes + cost DB observations)
@@ -25,6 +25,7 @@ uvicorn app.main:app --reload
 ```
 
 API docs: `http://localhost:8000/docs`
+Website UI: `http://localhost:8000/`
 
 ## Data model implemented
 

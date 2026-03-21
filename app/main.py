@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -20,11 +23,18 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Construction Cost Estimator", version="0.1.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.post("/projects", response_model=schemas.ProjectRead, status_code=status.HTTP_201_CREATED)

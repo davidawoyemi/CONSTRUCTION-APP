@@ -28,6 +28,14 @@ def teardown_module() -> None:
         db_file.unlink()
 
 
+def test_index_page_loads() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "Construction Cost Estimator" in response.text
+
+
 def test_estimate_reprice_and_lock() -> None:
     reset_db()
     with TestClient(app) as client:
