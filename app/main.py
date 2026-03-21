@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import json
 from io import BytesIO
+from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -28,6 +29,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Construction Cost Estimator", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+AUTO_FROM_DRAWING_PREFIX = "AUTO_FROM_DRAWING:"
+AUTO_EXTRA_PREFIX = "AUTO_EXTRA:"
 
 
 @app.get("/health")
@@ -90,6 +93,97 @@ def extract_drawing_text(file_name: str, file_bytes: bytes) -> str:
     return file_bytes.decode("utf-8", errors="ignore")
 
 
+def parse_known_prices(known_prices_json: str | None) -> dict[str, float]:
+    known_prices: dict[str, float] = {}
+    if not known_prices_json:
+        return known_prices
+
+    try:
+        raw = json.loads(known_prices_json)
+    except json.JSONDecodeError as err:
+        raise HTTPException(status_code=400, detail="known_prices_json must be valid JSON") from err
+
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="known_prices_json must be a JSON object")
+
+    for key, value in raw.items():
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError) as err:
+            raise HTTPException(status_code=400, detail=f"Invalid price for material '{key}'") from err
+        if numeric_value <= 0:
+            raise HTTPException(status_code=400, detail=f"Known price must be positive for '{key}'")
+        known_prices[str(key)] = numeric_value
+
+    return known_prices
+
+
+def parse_additional_materials(additional_materials_json: str | None) -> list[dict[str, Any]]:
+    if not additional_materials_json:
+        return []
+
+    try:
+        raw = json.loads(additional_materials_json)
+    except json.JSONDecodeError as err:
+        raise HTTPException(status_code=400, detail="additional_materials_json must be valid JSON") from err
+
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail="additional_materials_json must be a JSON array")
+
+    items: list[dict[str, Any]] = []
+    for index, row in enumerate(raw):
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=400, detail=f"additional_materials_json[{index}] must be an object")
+
+        item_name = str(row.get("item_name", "")).strip()
+        if not item_name:
+            raise HTTPException(status_code=400, detail=f"additional_materials_json[{index}] missing item_name")
+
+        try:
+            quantity = float(row.get("quantity", 0))
+        except (TypeError, ValueError) as err:
+            raise HTTPException(status_code=400, detail=f"Invalid quantity for '{item_name}'") from err
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Quantity must be positive for '{item_name}'")
+
+        try:
+            waste = float(row.get("waste_factor_pct", 0))
+        except (TypeError, ValueError) as err:
+            raise HTTPException(status_code=400, detail=f"Invalid waste_factor_pct for '{item_name}'") from err
+        if waste < 0:
+            raise HTTPException(status_code=400, detail=f"waste_factor_pct cannot be negative for '{item_name}'")
+
+        known_unit_price = None
+        if row.get("known_unit_price") is not None and str(row.get("known_unit_price")).strip() != "":
+            try:
+                known_unit_price = float(row.get("known_unit_price"))
+            except (TypeError, ValueError) as err:
+                raise HTTPException(status_code=400, detail=f"Invalid known_unit_price for '{item_name}'") from err
+            if known_unit_price <= 0:
+                raise HTTPException(status_code=400, detail=f"known_unit_price must be positive for '{item_name}'")
+
+        material_key = row.get("material_key")
+        if material_key:
+            material_key = drawing_estimator.normalize_material_key(str(material_key))
+        else:
+            material_key = drawing_estimator.normalize_material_key(item_name)
+
+        items.append(
+            {
+                "material_key": material_key,
+                "item_name": item_name,
+                "csi_code": str(row.get("csi_code", "")).strip() or "CUSTOM-00",
+                "unit": str(row.get("unit", "")).strip() or "ea",
+                "quantity": round(quantity, 2),
+                "waste_factor_pct": round(waste, 2),
+                "known_unit_price": known_unit_price,
+                "is_user_added": True,
+            }
+        )
+
+    return items
+
+
 @app.post(
     "/projects/{project_id}/takeoff-items",
     response_model=schemas.TakeoffItemRead,
@@ -124,26 +218,12 @@ async def auto_estimate_from_drawing(
     project_id: int,
     drawing: UploadFile = File(...),
     known_prices_json: str | None = Form(default=None),
+    additional_materials_json: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> schemas.DrawingAutoEstimateResponse:
     project = get_project_or_404(db, project_id)
-
-    known_prices: dict[str, float] = {}
-    if known_prices_json:
-        try:
-            raw = json.loads(known_prices_json)
-        except json.JSONDecodeError as err:
-            raise HTTPException(status_code=400, detail="known_prices_json must be valid JSON") from err
-        if not isinstance(raw, dict):
-            raise HTTPException(status_code=400, detail="known_prices_json must be a JSON object")
-        for key, value in raw.items():
-            try:
-                numeric_value = float(value)
-            except (TypeError, ValueError) as err:
-                raise HTTPException(status_code=400, detail=f"Invalid price for material '{key}'") from err
-            if numeric_value <= 0:
-                raise HTTPException(status_code=400, detail=f"Known price must be positive for '{key}'")
-            known_prices[str(key)] = numeric_value
+    known_prices = parse_known_prices(known_prices_json)
+    additional_materials = parse_additional_materials(additional_materials_json)
 
     content = await drawing.read()
     if not content:
@@ -156,11 +236,18 @@ async def auto_estimate_from_drawing(
 
     assumptions = drawing_estimator.infer_assumptions(drawing_text)
     materials = drawing_estimator.generate_material_requirements(assumptions)
+    materials.extend(additional_materials)
 
     db.execute(
         delete(models.TakeoffItem).where(
             models.TakeoffItem.project_id == project.id,
-            models.TakeoffItem.notes.like("AUTO_FROM_DRAWING:%"),
+            models.TakeoffItem.notes.like(f"{AUTO_FROM_DRAWING_PREFIX}%"),
+        )
+    )
+    db.execute(
+        delete(models.TakeoffItem).where(
+            models.TakeoffItem.project_id == project.id,
+            models.TakeoffItem.notes.like(f"{AUTO_EXTRA_PREFIX}%"),
         )
     )
     db.flush()
@@ -172,6 +259,7 @@ async def auto_estimate_from_drawing(
     missing_prices: list[str] = []
 
     for row in materials:
+        note_prefix = AUTO_EXTRA_PREFIX if row.get("is_user_added") else AUTO_FROM_DRAWING_PREFIX
         db.add(
             models.TakeoffItem(
                 project_id=project.id,
@@ -180,11 +268,13 @@ async def auto_estimate_from_drawing(
                 quantity=row["quantity"],
                 unit=row["unit"],
                 waste_factor_pct=row["waste_factor_pct"],
-                notes=f"AUTO_FROM_DRAWING:{row['material_key']}",
+                notes=f"{note_prefix}{row['material_key']}",
             )
         )
 
-        known_price = known_prices.get(row["material_key"])
+        known_price = row.get("known_unit_price")
+        if known_price is None:
+            known_price = known_prices.get(row["material_key"])
         price_range = pricing.estimate_unit_price_range(
             db=db,
             project=project,
@@ -228,7 +318,8 @@ async def auto_estimate_from_drawing(
 
     message = (
         "Auto-estimate generated from drawing. "
-        "Add known unit prices for higher accuracy; missing items use current market ranges."
+        "Add known unit prices for higher accuracy; missing items use current market ranges. "
+        f"Custom materials added: {len(additional_materials)}."
     )
 
     return schemas.DrawingAutoEstimateResponse(

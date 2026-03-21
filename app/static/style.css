@@ -4,36 +4,58 @@
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f7f8fa;
-  color: #222;
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+  background: radial-gradient(circle at top left, #0f172a, #111827 45%, #1f2937);
+  color: #0f172a;
 }
 
 .container {
-  max-width: 1000px;
+  max-width: 1120px;
   margin: 2rem auto;
   padding: 0 1rem 2rem;
 }
 
-header {
+.hero {
   margin-bottom: 1rem;
+  background: linear-gradient(135deg, #1d4ed8, #22c55e);
+  color: #fff;
+  border-radius: 16px;
+  padding: 1.2rem 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 h1 {
   margin-bottom: 0.25rem;
+  margin-top: 0;
+}
+
+h2 {
+  margin-top: 0;
+}
+
+.hero-pill {
+  background: rgba(255, 255, 255, 0.18);
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .card {
-  background: #fff;
-  border: 1px solid #e6e8ee;
-  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #dbe5f0;
+  border-radius: 14px;
   padding: 1rem;
   margin-bottom: 1rem;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.12);
 }
 
 form {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 0.75rem;
   align-items: end;
 }
@@ -47,9 +69,11 @@ label {
 
 input,
 textarea {
-  border: 1px solid #cbd3e1;
-  border-radius: 6px;
-  padding: 0.5rem;
+  border: 1px solid #c6d5e8;
+  border-radius: 8px;
+  padding: 0.58rem;
+  font: inherit;
+  background: #fff;
 }
 
 textarea {
@@ -63,26 +87,27 @@ textarea {
 
 button {
   border: none;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  padding: 0.62rem 0.92rem;
   font-weight: 600;
-  background: #1f5eff;
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
   color: #fff;
   cursor: pointer;
 }
 
 button:hover {
-  background: #1849c9;
+  filter: brightness(1.06);
 }
 
 .button-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
 
 .meta {
-  color: #4b5563;
+  color: #334155;
   margin-top: 0.75rem;
 }
 
@@ -90,14 +115,23 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.75rem;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 th,
 td {
-  border-bottom: 1px solid #e6e8ee;
+  border-bottom: 1px solid #e2e8f0;
   text-align: left;
-  padding: 0.6rem;
+  padding: 0.58rem;
   font-size: 0.9rem;
+  vertical-align: top;
+}
+
+th {
+  background: #eff6ff;
+  color: #1e3a8a;
 }
 
 pre {
@@ -108,4 +142,29 @@ pre {
   min-height: 120px;
   max-height: 260px;
   overflow: auto;
+}
+
+.totals {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: #ecfeff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+}
+
+.advanced-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+summary {
+  cursor: pointer;
+}
+
+.price-input {
+  max-width: 140px;
 }

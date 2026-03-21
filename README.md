@@ -73,9 +73,11 @@ For each takeoff item:
 1. Upload drawing file (PDF or TXT) to `/projects/{project_id}/drawings/auto-estimate`.
 2. App infers project assumptions (area, floors, bedroom/bath count).
 3. App auto-generates major material requirements (cement, rebar, 6in/9in blocks, sand, paint, electrical, plumbing, roof timber/sheet, doors, windows, tiles, wires, pipes).
-4. If you know some unit prices, pass them in `known_prices_json` (key-value map).
-5. Missing prices are filled with market-derived low/expected/high ranges.
-6. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
+4. App returns a locked material list where users can enter known unit prices.
+5. If you know prices, pass them in `known_prices_json` (key-value map by `material_key`).
+6. You can add extra materials not detected from drawing via `additional_materials_json`.
+7. Missing prices are filled with market-derived low/expected/high ranges.
+8. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
 
 ## Running tests
 

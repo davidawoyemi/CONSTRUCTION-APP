@@ -5,6 +5,11 @@ import re
 from dataclasses import dataclass
 
 
+def normalize_material_key(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return normalized or "custom_material"
+
+
 @dataclass
 class Assumptions:
     floor_area_sqm: float

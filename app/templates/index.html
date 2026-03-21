@@ -3,29 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Construction Cost Estimator</title>
+  <title>BuildSmart Estimator</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <main class="container">
-    <header>
-      <h1>Construction Cost Estimator</h1>
-      <p>Upload a drawing, auto-estimate all major materials, and fill missing prices with market ranges.</p>
+    <header class="hero">
+      <div>
+        <h1>BuildSmart Estimator</h1>
+        <p>
+          Upload your drawing. We auto-detect required materials, then you can fill in prices you know.
+          Missing prices are estimated with market ranges.
+        </p>
+      </div>
+      <div class="hero-pill">Drawing-First Costing</div>
     </header>
 
     <section class="card">
-      <h2>1) Create Project</h2>
+      <h2>Step 1 - Create Project</h2>
       <form id="project-form">
         <label>
           Project Name
-          <input type="text" id="project-name" placeholder="New Office Buildout" required />
+          <input type="text" id="project-name" placeholder="3-Bed Duplex, Lekki" required />
         </label>
         <label>
           Project Type
-          <input type="text" id="project-type" placeholder="commercial" required />
+          <input type="text" id="project-type" placeholder="residential" required />
         </label>
         <label>
-          ZIP Code
+          ZIP / Location Code
           <input type="text" id="project-zip" placeholder="10001" required />
         </label>
         <button type="submit">Create Project</button>
@@ -34,96 +40,147 @@
     </section>
 
     <section class="card">
-      <h2>2) Drawing Auto-Estimate</h2>
+      <h2>Step 2 - Analyze Drawing</h2>
       <form id="drawing-form">
-        <label>
-          Drawing File (PDF/TXT)
+        <label class="wide">
+          Drawing File (PDF or TXT)
           <input type="file" id="drawing-file" accept=".pdf,.txt" required />
         </label>
-        <label class="wide">
-          Known Unit Prices (optional)
-          <textarea id="known-prices" rows="5" placeholder="cement_bag=10.8&#10;rebar_kg=1.55&#10;doors_ea=230"></textarea>
-        </label>
-        <button type="submit">Analyze Drawing & Estimate</button>
+        <button type="submit">Analyze Drawing</button>
       </form>
       <p class="meta" id="drawing-meta">No drawing analyzed yet.</p>
-      <div class="totals">
-        <p><strong>Total Range:</strong> <span id="auto-total-range">$0.00 - $0.00</span></p>
-        <p><strong>Expected:</strong> <span id="auto-total-expected">$0.00</span></p>
+    </section>
+
+    <section class="card">
+      <h2>Step 3 - Confirm Prices for Detected Materials</h2>
+      <p class="meta">
+        Material names/quantities below are locked from drawing analysis. Enter only the prices you know per unit.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Material (Locked)</th>
+            <th>Qty</th>
+            <th>Unit</th>
+            <th>Market Hint</th>
+            <th>Your Unit Price (Optional)</th>
+          </tr>
+        </thead>
+        <tbody id="price-input-rows"></tbody>
+      </table>
+      <div class="button-row">
+        <button id="apply-price-btn" type="button">Apply Prices & Recalculate</button>
       </div>
+      <p class="meta" id="price-prompt">Analyze a drawing first to populate this list.</p>
+    </section>
+
+    <section class="card">
+      <h2>Step 4 - Add Other Materials (Optional)</h2>
+      <form id="extra-material-form">
+        <label>Material Name <input type="text" id="extra-name" placeholder="Waterproof Membrane" required /></label>
+        <label>CSI Code (optional) <input type="text" id="extra-csi" placeholder="07-13-00" /></label>
+        <label>Quantity <input type="number" step="0.01" id="extra-qty" required /></label>
+        <label>Unit <input type="text" id="extra-unit" placeholder="sqm" required /></label>
+        <label>Waste % <input type="number" step="0.01" id="extra-waste" value="0" required /></label>
+        <label>Known Unit Price (optional) <input type="number" step="0.01" id="extra-price" /></label>
+        <button type="submit">Add Extra Material</button>
+      </form>
       <table>
         <thead>
           <tr>
             <th>Material</th>
             <th>Qty</th>
             <th>Unit</th>
+            <th>Known Unit Price</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="extra-material-rows"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Estimated Cost Output</h2>
+      <div class="totals">
+        <p><strong>Total Range:</strong> <span id="auto-total-range">$0.00 - $0.00</span></p>
+        <p><strong>Expected Total:</strong> <span id="auto-total-expected">$0.00</span></p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>Qty</th>
             <th>Unit Price (Low - High)</th>
             <th>Expected</th>
-            <th>Line Total Range</th>
+            <th>Line Total (Low - High)</th>
             <th>Source</th>
+            <th>Confidence</th>
           </tr>
         </thead>
         <tbody id="auto-line-items"></tbody>
       </table>
     </section>
 
-    <section class="card">
-      <h2>3) Add Takeoff Item (Manual override)</h2>
-      <form id="takeoff-form">
-        <label>CSI Code <input type="text" id="takeoff-csi" placeholder="09-29-00" required /></label>
-        <label>Item Name <input type="text" id="takeoff-name" placeholder="Drywall Level 1" required /></label>
-        <label>Quantity <input type="number" step="0.01" id="takeoff-qty" required /></label>
-        <label>Unit <input type="text" id="takeoff-unit" placeholder="sqft" required /></label>
-        <label>Waste % <input type="number" step="0.01" id="takeoff-waste" value="0" required /></label>
-        <button type="submit">Add Takeoff Item</button>
-      </form>
-    </section>
+    <details class="card">
+      <summary><strong>Advanced Tools (Optional)</strong> - manual overrides, supplier quotes, bid snapshots</summary>
 
-    <section class="card">
-      <h2>4) Import Supplier Quote</h2>
-      <form id="quote-form">
-        <label>Supplier <input type="text" id="quote-supplier" placeholder="ACME Supply" required /></label>
-        <label>Quote Ref <input type="text" id="quote-ref" placeholder="Q-1002" /></label>
-        <label>CSI Code <input type="text" id="quote-csi" placeholder="09-29-00" required /></label>
-        <label>Item Name <input type="text" id="quote-name" placeholder="Gypsum Board" required /></label>
-        <label>Unit <input type="text" id="quote-unit" placeholder="sqft" required /></label>
-        <label>Quoted Unit Cost <input type="number" step="0.01" id="quote-cost" required /></label>
-        <button type="submit">Import Quote</button>
-      </form>
-    </section>
+      <div class="advanced-grid">
+        <section>
+          <h3>Add Takeoff Item (Manual Override)</h3>
+          <p class="meta">Use this only when you want to manually add/adjust an item outside drawing detection.</p>
+          <form id="takeoff-form">
+            <label>CSI Code <input type="text" id="takeoff-csi" placeholder="09-29-00" required /></label>
+            <label>Item Name <input type="text" id="takeoff-name" placeholder="Drywall Level 1" required /></label>
+            <label>Quantity <input type="number" step="0.01" id="takeoff-qty" required /></label>
+            <label>Unit <input type="text" id="takeoff-unit" placeholder="sqft" required /></label>
+            <label>Waste % <input type="number" step="0.01" id="takeoff-waste" value="0" required /></label>
+            <button type="submit">Add Takeoff Item</button>
+          </form>
+        </section>
 
-    <section class="card">
-      <h2>5) Estimate Version</h2>
-      <form id="estimate-form">
-        <label>Version Name <input type="text" id="estimate-name" placeholder="v1 baseline" required /></label>
-        <button type="submit">Create Estimate Version</button>
-      </form>
-      <div class="button-row">
-        <button id="reprice-btn" type="button">Reprice Estimate</button>
-        <button id="lock-btn" type="button">Lock Estimate</button>
-        <button id="refresh-btn" type="button">Refresh Estimate</button>
+        <section>
+          <h3>Import Supplier Quote</h3>
+          <p class="meta">Use this when a vendor gives you an exact quote to improve pricing accuracy.</p>
+          <form id="quote-form">
+            <label>Supplier <input type="text" id="quote-supplier" placeholder="ACME Supply" required /></label>
+            <label>Quote Ref <input type="text" id="quote-ref" placeholder="Q-1002" /></label>
+            <label>CSI Code <input type="text" id="quote-csi" placeholder="09-29-00" required /></label>
+            <label>Item Name <input type="text" id="quote-name" placeholder="Gypsum Board" required /></label>
+            <label>Unit <input type="text" id="quote-unit" placeholder="sqft" required /></label>
+            <label>Quoted Unit Cost <input type="number" step="0.01" id="quote-cost" required /></label>
+            <button type="submit">Import Quote</button>
+          </form>
+        </section>
+
+        <section>
+          <h3>Estimate Version (Bid Snapshot)</h3>
+          <p class="meta">Create and lock bid versions so your numbers are frozen for submissions.</p>
+          <form id="estimate-form">
+            <label>Version Name <input type="text" id="estimate-name" placeholder="v1 baseline" required /></label>
+            <button type="submit">Create Estimate Version</button>
+          </form>
+          <div class="button-row">
+            <button id="reprice-btn" type="button">Reprice Estimate</button>
+            <button id="lock-btn" type="button">Lock Estimate</button>
+            <button id="refresh-btn" type="button">Refresh Estimate</button>
+          </div>
+          <p class="meta" id="estimate-meta">No estimate selected.</p>
+          <p><strong>Estimate Total:</strong> <span id="estimate-total">$0.00</span></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Takeoff Item ID</th>
+                <th>Unit Cost</th>
+                <th>Subtotal</th>
+                <th>Freshness</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="line-items"></tbody>
+          </table>
+        </section>
       </div>
-      <p class="meta" id="estimate-meta">No estimate selected.</p>
-    </section>
-
-    <section class="card">
-      <h2>Estimate Output</h2>
-      <div class="totals">
-        <p><strong>Total Cost:</strong> <span id="estimate-total">$0.00</span></p>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Takeoff Item ID</th>
-            <th>Unit Cost</th>
-            <th>Subtotal</th>
-            <th>Freshness</th>
-            <th>Confidence</th>
-          </tr>
-        </thead>
-        <tbody id="line-items"></tbody>
-      </table>
-    </section>
+    </details>
 
     <section class="card">
       <h2>Activity Log</h2>

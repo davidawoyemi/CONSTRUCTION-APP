@@ -34,7 +34,7 @@ def test_index_page_loads() -> None:
     with TestClient(app) as client:
         response = client.get("/")
         assert response.status_code == 200
-        assert "Construction Cost Estimator" in response.text
+        assert "BuildSmart Estimator" in response.text
 
 
 def test_drawing_auto_estimate_with_known_prices() -> None:
@@ -64,6 +64,38 @@ def test_drawing_auto_estimate_with_known_prices() -> None:
         assert cement["price_source"] == "user_provided"
         assert cement["unit_price_expected"] == 11.2
         assert "rebar_kg" in payload["missing_unit_price_items"]
+
+
+def test_drawing_auto_estimate_supports_additional_materials() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            json={"name": "Extra Material Build", "project_type": "residential", "zip_code": "60601"},
+        )
+        project_id = project.json()["id"]
+
+        extra_materials = [
+            {
+                "item_name": "Waterproof Membrane",
+                "csi_code": "07-13-00",
+                "quantity": 120,
+                "unit": "sqm",
+                "waste_factor_pct": 5,
+                "known_unit_price": 6.8,
+            }
+        ]
+
+        response = client.post(
+            f"/projects/{project_id}/drawings/auto-estimate",
+            files={"drawing": ("sample.txt", b"Single floor house 150 sqm", "text/plain")},
+            data={"additional_materials_json": json.dumps(extra_materials)},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        extra_row = [row for row in payload["materials"] if row["item_name"] == "Waterproof Membrane"][0]
+        assert extra_row["price_source"] == "user_provided"
+        assert extra_row["unit_price_expected"] == 6.8
 
 
 def test_estimate_reprice_and_lock() -> None:
