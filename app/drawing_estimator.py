@@ -19,6 +19,36 @@ class Assumptions:
     roof_factor: float
 
 
+def apply_assumption_overrides(assumptions: Assumptions, overrides: dict | None) -> Assumptions:
+    if not overrides:
+        return assumptions
+
+    floor_area_sqm = assumptions.floor_area_sqm
+    floors = assumptions.floors
+    bedrooms = assumptions.bedrooms
+    bathrooms = assumptions.bathrooms
+    roof_factor = assumptions.roof_factor
+
+    if "floor_area_sqm" in overrides and overrides["floor_area_sqm"] is not None:
+        floor_area_sqm = max(30.0, float(overrides["floor_area_sqm"]))
+    if "floors" in overrides and overrides["floors"] is not None:
+        floors = max(1, int(overrides["floors"]))
+    if "bedrooms" in overrides and overrides["bedrooms"] is not None:
+        bedrooms = max(1, int(overrides["bedrooms"]))
+    if "bathrooms" in overrides and overrides["bathrooms"] is not None:
+        bathrooms = max(1, int(overrides["bathrooms"]))
+    if "roof_factor" in overrides and overrides["roof_factor"] is not None:
+        roof_factor = max(0.8, min(float(overrides["roof_factor"]), 2.0))
+
+    return Assumptions(
+        floor_area_sqm=round(floor_area_sqm, 2),
+        floors=floors,
+        bedrooms=bedrooms,
+        bathrooms=bathrooms,
+        roof_factor=round(roof_factor, 2),
+    )
+
+
 def infer_assumptions(drawing_text: str) -> Assumptions:
     text = drawing_text.lower()
 

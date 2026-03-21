@@ -31,6 +31,11 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 AUTO_FROM_DRAWING_PREFIX = "AUTO_FROM_DRAWING:"
 AUTO_EXTRA_PREFIX = "AUTO_EXTRA:"
+QUALITY_LEVELS = {"economy", "standard", "premium"}
+BASE_RATE_NGN_PER_SQM = {
+    "residential": {"economy": 280_000, "standard": 420_000, "premium": 650_000},
+    "commercial": {"economy": 360_000, "standard": 550_000, "premium": 850_000},
+}
 
 
 @app.get("/health")
@@ -184,6 +189,49 @@ def parse_additional_materials(additional_materials_json: str | None) -> list[di
     return items
 
 
+def parse_assumption_overrides(assumptions_json: str | None) -> tuple[dict[str, Any], str]:
+    if not assumptions_json:
+        return {}, "standard"
+    try:
+        raw = json.loads(assumptions_json)
+    except json.JSONDecodeError as err:
+        raise HTTPException(status_code=400, detail="assumptions_json must be valid JSON") from err
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="assumptions_json must be a JSON object")
+
+    overrides: dict[str, Any] = {}
+    for field in ("floor_area_sqm", "floors", "bedrooms", "bathrooms", "roof_factor"):
+        if field in raw and raw[field] is not None and str(raw[field]).strip() != "":
+            try:
+                overrides[field] = float(raw[field]) if field != "floors" and field not in {"bedrooms", "bathrooms"} else int(float(raw[field]))
+            except (TypeError, ValueError) as err:
+                raise HTTPException(status_code=400, detail=f"Invalid value for {field}") from err
+
+    quality_level = str(raw.get("quality_level", "standard")).strip().lower() or "standard"
+    if quality_level not in QUALITY_LEVELS:
+        raise HTTPException(status_code=400, detail="quality_level must be one of: economy, standard, premium")
+    return overrides, quality_level
+
+
+def benchmark_totals_ngn(project_type: str, zip_code: str, assumptions: drawing_estimator.Assumptions, quality_level: str) -> dict[str, float]:
+    category = "commercial" if "commercial" in project_type.lower() else "residential"
+    base_rate = BASE_RATE_NGN_PER_SQM[category][quality_level]
+    region_code = pricing.region_from_zip(zip_code)
+    region_factor = {
+        "NG-LAG": 1.08,
+        "NG-ABJ": 1.12,
+        "NG-RIV": 1.10,
+        "NG-KAN": 0.94,
+    }.get(region_code, 1.0)
+    gross_area = assumptions.floor_area_sqm * assumptions.floors
+    expected = gross_area * base_rate * region_factor
+    return {
+        "total_low": round(expected * 0.85, 2),
+        "total_expected": round(expected, 2),
+        "total_high": round(expected * 1.2, 2),
+    }
+
+
 @app.post(
     "/projects/{project_id}/takeoff-items",
     response_model=schemas.TakeoffItemRead,
@@ -219,11 +267,13 @@ async def auto_estimate_from_drawing(
     drawing: UploadFile = File(...),
     known_prices_json: str | None = Form(default=None),
     additional_materials_json: str | None = Form(default=None),
+    assumptions_json: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> schemas.DrawingAutoEstimateResponse:
     project = get_project_or_404(db, project_id)
     known_prices = parse_known_prices(known_prices_json)
     additional_materials = parse_additional_materials(additional_materials_json)
+    assumption_overrides, quality_level = parse_assumption_overrides(assumptions_json)
 
     content = await drawing.read()
     if not content:
@@ -235,8 +285,10 @@ async def auto_estimate_from_drawing(
         raise HTTPException(status_code=400, detail=f"Unable to read drawing: {err}") from err
 
     assumptions = drawing_estimator.infer_assumptions(drawing_text)
+    assumptions = drawing_estimator.apply_assumption_overrides(assumptions, assumption_overrides)
     materials = drawing_estimator.generate_material_requirements(assumptions)
     materials.extend(additional_materials)
+    benchmark = benchmark_totals_ngn(project.project_type, project.zip_code, assumptions, quality_level)
 
     db.execute(
         delete(models.TakeoffItem).where(
@@ -257,6 +309,7 @@ async def auto_estimate_from_drawing(
     total_high = 0.0
     output_rows: list[schemas.AutoEstimatedMaterialRead] = []
     missing_prices: list[str] = []
+    benchmark_adjustment_applied = False
 
     for row in materials:
         note_prefix = AUTO_EXTRA_PREFIX if row.get("is_user_added") else AUTO_FROM_DRAWING_PREFIX
@@ -314,13 +367,47 @@ async def auto_estimate_from_drawing(
             )
         )
 
+    # Keep totals realistic for Nigeria by adding an explicit line item
+    # when extracted drawing detail is sparse and bottom-up underestimates.
+    if total_expected < (benchmark["total_expected"] * 0.75):
+        low_gap = round(max(0.0, benchmark["total_low"] - total_low), 2)
+        expected_gap = round(max(0.0, benchmark["total_expected"] - total_expected), 2)
+        high_gap = round(max(0.0, benchmark["total_high"] - total_high), 2)
+        if expected_gap > 0:
+            output_rows.append(
+                schemas.AutoEstimatedMaterialRead(
+                    material_key="labor_preliminaries",
+                    item_name="Labour, preliminaries, logistics & contractor overhead",
+                    csi_code="01-00-00",
+                    unit="lot",
+                    quantity=1.0,
+                    unit_price_low=low_gap,
+                    unit_price_expected=expected_gap,
+                    unit_price_high=high_gap,
+                    line_total_low=low_gap,
+                    line_total_expected=expected_gap,
+                    line_total_high=high_gap,
+                    price_source="benchmark_adjustment",
+                    freshness_status="fresh",
+                    confidence_score=88.0,
+                    needs_user_price=False,
+                )
+            )
+            total_low += low_gap
+            total_expected += expected_gap
+            total_high += high_gap
+            benchmark_adjustment_applied = True
+
     db.commit()
 
     message = (
         "Auto-estimate generated from drawing. "
         "Add known unit prices for higher accuracy; missing items use current market ranges. "
-        f"Custom materials added: {len(additional_materials)}."
+        f"Custom materials added: {len(additional_materials)}. "
+        f"Quality: {quality_level}."
     )
+    if benchmark_adjustment_applied:
+        message += " A benchmark adjustment line was added because drawing detail was insufficient for full quantity extraction."
 
     return schemas.DrawingAutoEstimateResponse(
         project_id=project.id,
@@ -331,6 +418,7 @@ async def auto_estimate_from_drawing(
             bedrooms=assumptions.bedrooms,
             bathrooms=assumptions.bathrooms,
             roof_factor=assumptions.roof_factor,
+            quality_level=quality_level,
         ),
         materials=output_rows,
         totals=schemas.AutoEstimateTotalsRead(
@@ -338,7 +426,13 @@ async def auto_estimate_from_drawing(
             total_expected=round(total_expected, 2),
             total_high=round(total_high, 2),
         ),
+        benchmark_totals=schemas.AutoEstimateTotalsRead(
+            total_low=benchmark["total_low"],
+            total_expected=benchmark["total_expected"],
+            total_high=benchmark["total_high"],
+        ),
         missing_unit_price_items=missing_prices,
+        benchmark_adjustment_applied=benchmark_adjustment_applied,
         message=message,
     )
 

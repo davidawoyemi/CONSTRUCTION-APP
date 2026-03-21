@@ -99,6 +99,7 @@ class DrawingAssumptionsRead(BaseModel):
     bedrooms: int
     bathrooms: int
     roof_factor: float
+    quality_level: str
 
 
 class AutoEstimatedMaterialRead(BaseModel):
@@ -131,5 +132,7 @@ class DrawingAutoEstimateResponse(BaseModel):
     assumptions: DrawingAssumptionsRead
     materials: list[AutoEstimatedMaterialRead]
     totals: AutoEstimateTotalsRead
+    benchmark_totals: AutoEstimateTotalsRead | None = None
     missing_unit_price_items: list[str]
+    benchmark_adjustment_applied: bool
     message: str

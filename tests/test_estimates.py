@@ -57,8 +57,10 @@ def test_drawing_auto_estimate_with_known_prices() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["assumptions"]["floors"] == 2
+        assert payload["assumptions"]["quality_level"] == "standard"
         assert len(payload["materials"]) >= 12
         assert payload["totals"]["total_expected"] > 0
+        assert payload["benchmark_totals"]["total_expected"] > 0
 
         cement = [row for row in payload["materials"] if row["material_key"] == "cement_bag"][0]
         assert cement["price_source"] == "user_provided"

@@ -35,6 +35,10 @@ const MATERIAL_VARIANTS = {
 function log(message) {
   const el = document.getElementById("log");
   const time = new Date().toLocaleTimeString();
+  if (!el) {
+    console.log(`[${time}] ${message}`);
+    return;
+  }
   el.textContent = `[${time}] ${message}\n` + el.textContent;
 }
 
@@ -52,6 +56,9 @@ function normalizeKey(value) {
 
 function setStatus(id, text, kind) {
   const el = document.getElementById(id);
+  if (!el) {
+    return;
+  }
   el.textContent = text;
   el.classList.remove("pending", "success", "running");
   el.classList.add(kind);
@@ -208,7 +215,8 @@ function renderAutoEstimate(data) {
   const meta = document.getElementById("drawing-meta");
   meta.textContent =
     `Drawing: ${data.file_name} | Assumptions: ${data.assumptions.floor_area_sqm} sqm, ` +
-    `${data.assumptions.floors} floor(s), ${data.assumptions.bedrooms} bed, ${data.assumptions.bathrooms} bath`;
+    `${data.assumptions.floors} floor(s), ${data.assumptions.bedrooms} bed, ${data.assumptions.bathrooms} bath, quality ${data.assumptions.quality_level}. ` +
+    `${data.benchmark_adjustment_applied ? "Benchmark adjustment applied." : "No benchmark adjustment."}`;
   setStatus("drawing-status", "Completed", "success");
   setStatus("total-status", `Expected ${toMoney(data.totals.total_expected)}`, "success");
   renderPriceInputs(data.materials);
@@ -350,10 +358,18 @@ async function runDrawingEstimate() {
 
   try {
     const knownPrices = collectKnownPricesFromInputs();
+    const assumptionPayload = {
+      floor_area_sqm: document.getElementById("assumption-area").value || null,
+      floors: document.getElementById("assumption-floors").value || null,
+      bedrooms: document.getElementById("assumption-bedrooms").value || null,
+      bathrooms: document.getElementById("assumption-bathrooms").value || null,
+      quality_level: document.getElementById("assumption-quality").value || "standard",
+    };
     const formData = new FormData();
     formData.append("drawing", file);
     formData.append("known_prices_json", JSON.stringify(knownPrices));
     formData.append("additional_materials_json", JSON.stringify(state.extraMaterials));
+    formData.append("assumptions_json", JSON.stringify(assumptionPayload));
 
     const data = await apiFormRequest(`/projects/${state.projectId}/drawings/auto-estimate`, formData);
     renderAutoEstimate(data);

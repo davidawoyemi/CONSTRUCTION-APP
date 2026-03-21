@@ -9,6 +9,7 @@ Website + backend MVP for a construction estimating app that:
 - applies regional multipliers and waste
 - returns line-item estimate totals with freshness, confidence, and low/expected/high ranges
 - supports locking estimate versions for bid snapshots
+- uses benchmark-assisted calibration so totals stay realistic when drawing text is sparse
 
 ## Tech stack
 
@@ -73,12 +74,14 @@ For each takeoff item:
 
 1. Upload drawing file (PDF or TXT) to `/projects/{project_id}/drawings/auto-estimate`.
 2. App infers project assumptions (area, floors, bedroom/bath count).
-3. App auto-generates major material requirements (cement, rebar, 6in/9in blocks, sand, paint, electrical, plumbing, roof timber/sheet, doors, windows, tiles, wires, pipes).
-4. App returns a locked material list where users can enter known unit prices.
-5. If you know prices, pass them in `known_prices_json` (key-value map by `material_key`).
-6. You can add extra materials not detected from drawing via `additional_materials_json`.
-7. Missing prices are filled with market-derived low/expected/high ranges.
-8. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
+3. Optional assumption overrides can be supplied (`floor_area_sqm`, `floors`, `bedrooms`, `bathrooms`, `quality_level`).
+4. App auto-generates major material requirements (cement, rebar, 6in/9in blocks, sand, paint, electrical, plumbing, roof timber/sheet, doors, windows, tiles, wires, pipes).
+5. App returns a locked material list where users can enter known unit prices.
+6. If you know prices, pass them in `known_prices_json` (key-value map by `material_key`).
+7. You can add extra materials not detected from drawing via `additional_materials_json`.
+8. Missing prices are filled with market-derived low/expected/high ranges.
+9. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
+10. If extracted quantities look under-scoped, the app adds a benchmark adjustment line for labor/preliminaries/overhead.
 
 ### Nigeria-first pricing defaults
 
@@ -92,3 +95,15 @@ For each takeoff item:
 ```bash
 pytest -q
 ```
+
+## Deploy for a permanent URL (Render)
+
+This repo includes:
+- `Dockerfile`
+- `render.yaml`
+
+Deploy steps:
+1. Push branch to GitHub.
+2. In Render, create a new Blueprint from this repo.
+3. Render will deploy `buildsmart-estimator` using Docker.
+4. Use the generated `*.onrender.com` URL as an always-on endpoint (depends on Render plan).
