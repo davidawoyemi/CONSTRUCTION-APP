@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import json
 
 from fastapi.testclient import TestClient
 
@@ -34,6 +35,35 @@ def test_index_page_loads() -> None:
         response = client.get("/")
         assert response.status_code == 200
         assert "Construction Cost Estimator" in response.text
+
+
+def test_drawing_auto_estimate_with_known_prices() -> None:
+    reset_db()
+    with TestClient(app) as client:
+        project = client.post(
+            "/projects",
+            json={"name": "Auto Draw", "project_type": "residential", "zip_code": "30301"},
+        )
+        project_id = project.json()["id"]
+
+        drawing_text = "Proposed 2 floor house, 240 sqm, 4 bedrooms, 3 bathrooms, pitched roof."
+        known_prices = {"cement_bag": 11.2, "doors_ea": 240}
+        response = client.post(
+            f"/projects/{project_id}/drawings/auto-estimate",
+            files={"drawing": ("sample.txt", drawing_text.encode("utf-8"), "text/plain")},
+            data={"known_prices_json": json.dumps(known_prices)},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["assumptions"]["floors"] == 2
+        assert len(payload["materials"]) >= 12
+        assert payload["totals"]["total_expected"] > 0
+
+        cement = [row for row in payload["materials"] if row["material_key"] == "cement_bag"][0]
+        assert cement["price_source"] == "user_provided"
+        assert cement["unit_price_expected"] == 11.2
+        assert "rebar_kg" in payload["missing_unit_price_items"]
 
 
 def test_estimate_reprice_and_lock() -> None:

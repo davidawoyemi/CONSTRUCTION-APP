@@ -10,7 +10,7 @@
   <main class="container">
     <header>
       <h1>Construction Cost Estimator</h1>
-      <p>Build a project, add takeoff, import supplier quotes, and generate a bid estimate.</p>
+      <p>Upload a drawing, auto-estimate all major materials, and fill missing prices with market ranges.</p>
     </header>
 
     <section class="card">
@@ -34,7 +34,41 @@
     </section>
 
     <section class="card">
-      <h2>2) Add Takeoff Item</h2>
+      <h2>2) Drawing Auto-Estimate</h2>
+      <form id="drawing-form">
+        <label>
+          Drawing File (PDF/TXT)
+          <input type="file" id="drawing-file" accept=".pdf,.txt" required />
+        </label>
+        <label class="wide">
+          Known Unit Prices (optional)
+          <textarea id="known-prices" rows="5" placeholder="cement_bag=10.8&#10;rebar_kg=1.55&#10;doors_ea=230"></textarea>
+        </label>
+        <button type="submit">Analyze Drawing & Estimate</button>
+      </form>
+      <p class="meta" id="drawing-meta">No drawing analyzed yet.</p>
+      <div class="totals">
+        <p><strong>Total Range:</strong> <span id="auto-total-range">$0.00 - $0.00</span></p>
+        <p><strong>Expected:</strong> <span id="auto-total-expected">$0.00</span></p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>Qty</th>
+            <th>Unit</th>
+            <th>Unit Price (Low - High)</th>
+            <th>Expected</th>
+            <th>Line Total Range</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="auto-line-items"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>3) Add Takeoff Item (Manual override)</h2>
       <form id="takeoff-form">
         <label>CSI Code <input type="text" id="takeoff-csi" placeholder="09-29-00" required /></label>
         <label>Item Name <input type="text" id="takeoff-name" placeholder="Drywall Level 1" required /></label>
@@ -46,7 +80,7 @@
     </section>
 
     <section class="card">
-      <h2>3) Import Supplier Quote</h2>
+      <h2>4) Import Supplier Quote</h2>
       <form id="quote-form">
         <label>Supplier <input type="text" id="quote-supplier" placeholder="ACME Supply" required /></label>
         <label>Quote Ref <input type="text" id="quote-ref" placeholder="Q-1002" /></label>
@@ -59,7 +93,7 @@
     </section>
 
     <section class="card">
-      <h2>4) Estimate Version</h2>
+      <h2>5) Estimate Version</h2>
       <form id="estimate-form">
         <label>Version Name <input type="text" id="estimate-name" placeholder="v1 baseline" required /></label>
         <button type="submit">Create Estimate Version</button>

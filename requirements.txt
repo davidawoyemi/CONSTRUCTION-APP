@@ -4,5 +4,6 @@ sqlalchemy
 pydantic
 jinja2
 python-multipart
+pypdf
 pytest
 httpx

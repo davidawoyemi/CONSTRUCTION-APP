@@ -91,3 +91,45 @@ class EstimateVersionRead(BaseModel):
     line_items: list[EstimateLineItemRead]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DrawingAssumptionsRead(BaseModel):
+    floor_area_sqm: float
+    floors: int
+    bedrooms: int
+    bathrooms: int
+    roof_factor: float
+
+
+class AutoEstimatedMaterialRead(BaseModel):
+    material_key: str
+    item_name: str
+    csi_code: str
+    unit: str
+    quantity: float
+    unit_price_low: float
+    unit_price_expected: float
+    unit_price_high: float
+    line_total_low: float
+    line_total_expected: float
+    line_total_high: float
+    price_source: str
+    freshness_status: str
+    confidence_score: float
+    needs_user_price: bool
+
+
+class AutoEstimateTotalsRead(BaseModel):
+    total_low: float
+    total_expected: float
+    total_high: float
+
+
+class DrawingAutoEstimateResponse(BaseModel):
+    project_id: int
+    file_name: str
+    assumptions: DrawingAssumptionsRead
+    materials: list[AutoEstimatedMaterialRead]
+    totals: AutoEstimateTotalsRead
+    missing_unit_price_items: list[str]
+    message: str

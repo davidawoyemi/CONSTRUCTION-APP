@@ -1,13 +1,16 @@
 from contextlib import asynccontextmanager
+import json
+from io import BytesIO
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
+from pypdf import PdfReader
 
-from app import models, pricing, schemas
+from app import drawing_estimator, models, pricing, schemas
 from app.database import Base, SessionLocal, engine, get_db
 
 
@@ -71,6 +74,22 @@ def get_estimate_or_404(db: Session, estimate_version_id: int) -> models.Estimat
     return estimate_version
 
 
+def extract_drawing_text(file_name: str, file_bytes: bytes) -> str:
+    lower_name = file_name.lower()
+    if lower_name.endswith(".pdf"):
+        reader = PdfReader(BytesIO(file_bytes))
+        pages: list[str] = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+        return "\n".join(pages).strip()
+
+    if lower_name.endswith(".txt"):
+        return file_bytes.decode("utf-8", errors="ignore")
+
+    # Fallback for unsupported binary files: treat as UTF-8 text best-effort.
+    return file_bytes.decode("utf-8", errors="ignore")
+
+
 @app.post(
     "/projects/{project_id}/takeoff-items",
     response_model=schemas.TakeoffItemRead,
@@ -95,6 +114,142 @@ def create_takeoff_item(
     db.commit()
     db.refresh(takeoff_item)
     return takeoff_item
+
+
+@app.post(
+    "/projects/{project_id}/drawings/auto-estimate",
+    response_model=schemas.DrawingAutoEstimateResponse,
+)
+async def auto_estimate_from_drawing(
+    project_id: int,
+    drawing: UploadFile = File(...),
+    known_prices_json: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+) -> schemas.DrawingAutoEstimateResponse:
+    project = get_project_or_404(db, project_id)
+
+    known_prices: dict[str, float] = {}
+    if known_prices_json:
+        try:
+            raw = json.loads(known_prices_json)
+        except json.JSONDecodeError as err:
+            raise HTTPException(status_code=400, detail="known_prices_json must be valid JSON") from err
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=400, detail="known_prices_json must be a JSON object")
+        for key, value in raw.items():
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as err:
+                raise HTTPException(status_code=400, detail=f"Invalid price for material '{key}'") from err
+            if numeric_value <= 0:
+                raise HTTPException(status_code=400, detail=f"Known price must be positive for '{key}'")
+            known_prices[str(key)] = numeric_value
+
+    content = await drawing.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Drawing file is empty")
+
+    try:
+        drawing_text = extract_drawing_text(drawing.filename or "drawing", content)
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Unable to read drawing: {err}") from err
+
+    assumptions = drawing_estimator.infer_assumptions(drawing_text)
+    materials = drawing_estimator.generate_material_requirements(assumptions)
+
+    db.execute(
+        delete(models.TakeoffItem).where(
+            models.TakeoffItem.project_id == project.id,
+            models.TakeoffItem.notes.like("AUTO_FROM_DRAWING:%"),
+        )
+    )
+    db.flush()
+
+    total_low = 0.0
+    total_expected = 0.0
+    total_high = 0.0
+    output_rows: list[schemas.AutoEstimatedMaterialRead] = []
+    missing_prices: list[str] = []
+
+    for row in materials:
+        db.add(
+            models.TakeoffItem(
+                project_id=project.id,
+                csi_code=row["csi_code"],
+                item_name=row["item_name"],
+                quantity=row["quantity"],
+                unit=row["unit"],
+                waste_factor_pct=row["waste_factor_pct"],
+                notes=f"AUTO_FROM_DRAWING:{row['material_key']}",
+            )
+        )
+
+        known_price = known_prices.get(row["material_key"])
+        price_range = pricing.estimate_unit_price_range(
+            db=db,
+            project=project,
+            csi_code=row["csi_code"],
+            known_unit_price=known_price,
+        )
+
+        waste_multiplier = 1 + (row["waste_factor_pct"] / 100)
+        line_low = round(row["quantity"] * price_range["unit_price_low"] * waste_multiplier, 2)
+        line_expected = round(row["quantity"] * price_range["unit_price_expected"] * waste_multiplier, 2)
+        line_high = round(row["quantity"] * price_range["unit_price_high"] * waste_multiplier, 2)
+        total_low += line_low
+        total_expected += line_expected
+        total_high += line_high
+
+        needs_user_price = price_range["price_source"] != "user_provided"
+        if needs_user_price:
+            missing_prices.append(row["material_key"])
+
+        output_rows.append(
+            schemas.AutoEstimatedMaterialRead(
+                material_key=row["material_key"],
+                item_name=row["item_name"],
+                csi_code=row["csi_code"],
+                unit=row["unit"],
+                quantity=row["quantity"],
+                unit_price_low=price_range["unit_price_low"],
+                unit_price_expected=price_range["unit_price_expected"],
+                unit_price_high=price_range["unit_price_high"],
+                line_total_low=line_low,
+                line_total_expected=line_expected,
+                line_total_high=line_high,
+                price_source=price_range["price_source"],
+                freshness_status=price_range["freshness_status"],
+                confidence_score=price_range["confidence_score"],
+                needs_user_price=needs_user_price,
+            )
+        )
+
+    db.commit()
+
+    message = (
+        "Auto-estimate generated from drawing. "
+        "Add known unit prices for higher accuracy; missing items use current market ranges."
+    )
+
+    return schemas.DrawingAutoEstimateResponse(
+        project_id=project.id,
+        file_name=drawing.filename or "drawing",
+        assumptions=schemas.DrawingAssumptionsRead(
+            floor_area_sqm=assumptions.floor_area_sqm,
+            floors=assumptions.floors,
+            bedrooms=assumptions.bedrooms,
+            bathrooms=assumptions.bathrooms,
+            roof_factor=assumptions.roof_factor,
+        ),
+        materials=output_rows,
+        totals=schemas.AutoEstimateTotalsRead(
+            total_low=round(total_low, 2),
+            total_expected=round(total_expected, 2),
+            total_high=round(total_high, 2),
+        ),
+        missing_unit_price_items=missing_prices,
+        message=message,
+    )
 
 
 @app.post(

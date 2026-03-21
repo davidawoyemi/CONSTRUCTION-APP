@@ -2,10 +2,11 @@
 
 Website + backend MVP for a construction estimating app that:
 
+- accepts drawing files (PDF/TXT) and auto-generates takeoff quantities
 - stores project takeoff items
 - blends multiple price sources (supplier quotes + cost DB observations)
 - applies regional multipliers and waste
-- returns line-item estimate totals with freshness and confidence
+- returns line-item estimate totals with freshness, confidence, and low/expected/high ranges
 - supports locking estimate versions for bid snapshots
 
 ## Tech stack
@@ -43,6 +44,7 @@ Website UI: `http://localhost:8000/`
 ## Core endpoints
 
 - `POST /projects`
+- `POST /projects/{project_id}/drawings/auto-estimate` (drawing-first workflow)
 - `POST /projects/{project_id}/takeoff-items`
 - `POST /projects/{project_id}/supplier-quotes/import`
 - `POST /projects/{project_id}/estimate-versions`
@@ -65,6 +67,15 @@ For each takeoff item:
    - freshness (`fresh`, `aging`, `stale`)
    - confidence score (0-100)
    - source trace metadata
+
+### Drawing-first behavior
+
+1. Upload drawing file (PDF or TXT) to `/projects/{project_id}/drawings/auto-estimate`.
+2. App infers project assumptions (area, floors, bedroom/bath count).
+3. App auto-generates major material requirements (cement, rebar, 6in/9in blocks, sand, paint, electrical, plumbing, roof timber/sheet, doors, windows, tiles, wires, pipes).
+4. If you know some unit prices, pass them in `known_prices_json` (key-value map).
+5. Missing prices are filled with market-derived low/expected/high ranges.
+6. Response includes total low/expected/high project cost and missing material keys where user prices can improve accuracy.
 
 ## Running tests
 

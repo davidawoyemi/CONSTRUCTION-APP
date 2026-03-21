@@ -45,10 +45,20 @@ label {
   gap: 0.25rem;
 }
 
-input {
+input,
+textarea {
   border: 1px solid #cbd3e1;
   border-radius: 6px;
   padding: 0.5rem;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.wide {
+  grid-column: 1 / -1;
 }
 
 button {

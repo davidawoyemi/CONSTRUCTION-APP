@@ -49,6 +49,49 @@ function renderEstimate(data) {
   setEstimateMeta(data.is_locked);
 }
 
+function parseKnownPrices(input) {
+  const lines = input
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  const payload = {};
+  lines.forEach((line) => {
+    const [key, rawValue] = line.includes("=") ? line.split("=") : line.split(":");
+    if (!key || rawValue === undefined) {
+      return;
+    }
+    const numericValue = Number(rawValue.trim());
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      payload[key.trim()] = numericValue;
+    }
+  });
+  return payload;
+}
+
+function renderAutoEstimate(data) {
+  const tbody = document.getElementById("auto-line-items");
+  tbody.innerHTML = "";
+
+  data.materials.forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${item.item_name}${item.needs_user_price ? " <em>(market range)</em>" : ""}</td>
+      <td>${item.quantity.toFixed(2)}</td>
+      <td>${item.unit}</td>
+      <td>${toMoney(item.unit_price_low)} - ${toMoney(item.unit_price_high)}</td>
+      <td>${toMoney(item.unit_price_expected)}</td>
+      <td>${toMoney(item.line_total_low)} - ${toMoney(item.line_total_high)}</td>
+      <td>${item.price_source}</td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  document.getElementById("auto-total-range").textContent = `${toMoney(data.totals.total_low)} - ${toMoney(data.totals.total_high)}`;
+  document.getElementById("auto-total-expected").textContent = toMoney(data.totals.total_expected);
+  const meta = document.getElementById("drawing-meta");
+  meta.textContent = `Drawing: ${data.file_name} | Assumptions: ${data.assumptions.floor_area_sqm} sqm, ${data.assumptions.floors} floor(s), ${data.assumptions.bedrooms} bed, ${data.assumptions.bathrooms} bath`;
+}
+
 async function apiRequest(path, method = "GET", payload = null) {
   const response = await fetch(path, {
     method,
@@ -69,6 +112,19 @@ async function apiRequest(path, method = "GET", payload = null) {
   return response.json();
 }
 
+async function apiFormRequest(path, formData) {
+  const response = await fetch(path, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const message = error.detail || `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return response.json();
+}
+
 document.getElementById("project-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -85,6 +141,38 @@ document.getElementById("project-form").addEventListener("submit", async (event)
     log(`Created project "${data.name}" (id=${data.id})`);
   } catch (err) {
     log(`Project error: ${err.message}`);
+  }
+});
+
+document.getElementById("drawing-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.projectId) {
+    log("Create a project first.");
+    return;
+  }
+  const fileInput = document.getElementById("drawing-file");
+  const file = fileInput.files[0];
+  if (!file) {
+    log("Select a drawing file first.");
+    return;
+  }
+
+  try {
+    const knownPricesRaw = document.getElementById("known-prices").value;
+    const knownPrices = parseKnownPrices(knownPricesRaw);
+    const formData = new FormData();
+    formData.append("drawing", file);
+    formData.append("known_prices_json", JSON.stringify(knownPrices));
+
+    const data = await apiFormRequest(`/projects/${state.projectId}/drawings/auto-estimate`, formData);
+    renderAutoEstimate(data);
+    if (data.missing_unit_price_items.length > 0) {
+      log(`Auto-estimate done. Add known prices for: ${data.missing_unit_price_items.join(", ")}`);
+    } else {
+      log("Auto-estimate done with your provided unit prices.");
+    }
+  } catch (err) {
+    log(`Drawing estimate error: ${err.message}`);
   }
 });
 
