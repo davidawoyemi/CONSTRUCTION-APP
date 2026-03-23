@@ -107,3 +107,17 @@ Deploy steps:
 2. In Render, create a new Blueprint from this repo.
 3. Render will deploy `buildsmart-estimator` using Docker.
 4. Use the generated `*.onrender.com` URL as an always-on endpoint (depends on Render plan).
+
+## Free hosting options (no card)
+
+If Render asks for payment, use one of these no-card options:
+
+1) Hugging Face Spaces (Docker Space)
+- Create a new Space: `Docker` SDK
+- Point it to this repository/branch
+- It will use the `Dockerfile` and expose port `7860`
+- You get a shareable URL like `https://<space-name>.hf.space`
+
+2) Railway/other hosts
+- Ensure host supports Docker and dynamic `PORT`
+- This repo is already configured to read `PORT` from environment
